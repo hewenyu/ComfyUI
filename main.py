@@ -215,8 +215,15 @@ async def run(server_instance, address='', port=8188, verbose=True, call_on_star
     addresses = []
     for addr in address.split(","):
         addresses.append((addr, port))
+    
+    # 在服务器启动后发送gRPC启动通知
+    async def startup_with_grpc_notification():
+        await server_instance.start_multi_address(addresses, call_on_start, verbose)
+        # 服务器启动完成后发送gRPC通知
+        grpc_manager.notify_startup()
+    
     await asyncio.gather(
-        server_instance.start_multi_address(addresses, call_on_start, verbose), server_instance.publish_loop()
+        startup_with_grpc_notification(), server_instance.publish_loop()
     )
 
 
@@ -318,7 +325,6 @@ if __name__ == "__main__":
         x = start_all_func()
         app.logger.print_startup_warnings()
         event_loop.run_until_complete(x)
-        grpc_manager.notify_startup()
     except KeyboardInterrupt:
         logging.info("\nStopped server")
 

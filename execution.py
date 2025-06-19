@@ -329,9 +329,11 @@ def execute(server, dynprompt, caches, current_item, extra_data, executed, promp
             try:
                 status_update = status_notifier_pb2.StatusUpdate(
                     event=status_notifier_pb2.EventType.NODE_EXECUTING,
-                    comfyui_id=get_comfyui_id(),
                     prompt_id=prompt_id,
-                    timestamp=status_notifier_pb2.Timestamp(seconds=int(time.time()))
+                    node_execution_info=status_notifier_pb2.NodeExecutionInfo(
+                        node_id=unique_id,
+                        node_type=class_type
+                    )
                 )
                 grpc_manager.publish(status_update)
             except Exception as e:
@@ -389,9 +391,7 @@ def execute(server, dynprompt, caches, current_item, extra_data, executed, promp
             try:
                 status_update = status_notifier_pb2.StatusUpdate(
                     event=status_notifier_pb2.EventType.NODE_EXECUTED,
-                    comfyui_id=get_comfyui_id(),
                     prompt_id=prompt_id,
-                    timestamp=status_notifier_pb2.Timestamp(seconds=int(time.time())),
                     node_execution_info=status_notifier_pb2.NodeExecutionInfo(
                         node_id=unique_id,
                         node_type=class_type,
@@ -476,17 +476,18 @@ def execute(server, dynprompt, caches, current_item, extra_data, executed, promp
         }
 
         try:
+            # 将traceback列表转换为字符串
+            traceback_str = ''.join(error_details["traceback"]) if isinstance(error_details["traceback"], list) else str(error_details["traceback"])
+            
             status_update = status_notifier_pb2.StatusUpdate(
                 event=status_notifier_pb2.EventType.NODE_ERROR,
-                comfyui_id=get_comfyui_id(),
                 prompt_id=prompt_id,
-                timestamp=status_notifier_pb2.Timestamp(seconds=int(time.time())),
                 error_info=status_notifier_pb2.ErrorInfo(
                     node_id=real_node_id,
                     node_type=class_type,
                     exception_message=error_details["exception_message"],
                     exception_type=error_details["exception_type"],
-                    traceback=error_details["traceback"],
+                    traceback=traceback_str,
                 )
             )
             grpc_manager.publish(status_update)
@@ -527,9 +528,7 @@ class PromptExecutor:
         try:
             status_update = status_notifier_pb2.StatusUpdate(
                 event=status_notifier_pb2.EventType.NODE_ERROR,
-                comfyui_id=get_comfyui_id(),
                 prompt_id=prompt_id,
-                timestamp=status_notifier_pb2.Timestamp(seconds=int(time.time()))
             )
             grpc_manager.publish(status_update)
         except Exception as e:
@@ -570,13 +569,11 @@ class PromptExecutor:
         try:
             status_update = status_notifier_pb2.StatusUpdate(
                 event=status_notifier_pb2.EventType.EXECUTION_START,
-                comfyui_id=get_comfyui_id(),
                 prompt_id=prompt_id,
-                timestamp=status_notifier_pb2.Timestamp(seconds=int(time.time()))
             )
             grpc_manager.publish(status_update)
         except Exception as e:
-            logging.error(f"Error publishing prompt queued status: {e}")
+            logging.error(f"Error publishing execution start status: {e}")
 
         self.status_messages = []
         self.add_message("execution_start", { "prompt_id": prompt_id}, broadcast=False)
@@ -638,11 +635,20 @@ class PromptExecutor:
 
             if self.success:
                 try:
+                    # 准备执行成功的输出数据
+                    outputs_struct = None
+                    if self.status_messages:
+                        # 将输出转换为Struct格式
+                        from google.protobuf.struct_pb2 import Struct
+                        outputs_struct = Struct()
+                        # 这里可以根据需要添加实际的输出数据
+                    
                     status_update = status_notifier_pb2.StatusUpdate(
                         event=status_notifier_pb2.EventType.EXECUTION_SUCCESS,
-                        comfyui_id=get_comfyui_id(),
                         prompt_id=prompt_id,
-                        timestamp=status_notifier_pb2.Timestamp(seconds=int(time.time()))
+                        execution_success_info=status_notifier_pb2.ExecutionSuccessInfo(
+                            outputs=outputs_struct
+                        ) if outputs_struct else None
                     )
                     grpc_manager.publish(status_update)
                 except Exception as e:
@@ -651,9 +657,7 @@ class PromptExecutor:
                 try:
                     status_update = status_notifier_pb2.StatusUpdate(
                         event=status_notifier_pb2.EventType.EXECUTION_ERROR,
-                        comfyui_id=get_comfyui_id(),
                         prompt_id=prompt_id,
-                        timestamp=status_notifier_pb2.Timestamp(seconds=int(time.time()))
                     )
                     grpc_manager.publish(status_update)
                 except Exception as e:
