@@ -1,0 +1,60 @@
+syntax = "proto3";
+package comfyui;
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+service StatusNotifier {
+  rpc SendStatus(StatusUpdate) returns (StatusReply);
+}
+message StatusUpdate {
+  string prompt_id = 1;
+  EventType event = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  // 新增：全局唯一的 ComfyUI 实例 ID
+  string comfyui_id = 4;
+  oneof data {
+    PromptInfo prompt_info = 5;
+    ExecutionSuccessInfo execution_success_info = 6;
+    NodeExecutionInfo node_execution_info = 7;
+    ErrorInfo error_info = 8;
+    InstanceInfo instance_info = 9;
+  }
+}
+enum EventType {
+  UNKNOWN = 0;
+  PROMPT_QUEUED = 1;
+  EXECUTION_START = 2;
+  EXECUTION_SUCCESS = 3;
+  EXECUTION_ERROR = 4;
+  NODE_EXECUTING = 5;
+  NODE_EXECUTED = 6;
+  NODE_ERROR = 7;
+  // 新增：实例生命周期事件
+  INSTANCE_START = 8;
+  INSTANCE_SHUTDOWN = 9;
+}
+message PromptInfo {
+  int64 number = 1;
+}
+message ExecutionSuccessInfo {
+  google.protobuf.Struct outputs = 1;
+}
+message NodeExecutionInfo {
+  string node_id = 1;
+  string node_type = 2;
+  google.protobuf.Struct output_ui = 3;
+}
+message ErrorInfo {
+  string node_id = 1;
+  string node_type = 2;
+  string exception_message = 3;
+  string exception_type = 4;
+  string traceback = 5;
+  google.protobuf.Struct current_inputs = 6;
+}
+// 新增：实例信息
+message InstanceInfo {
+    string version = 1; // e.g., ComfyUI version
+}
+message StatusReply {
+  bool acknowledged = 1;
+}
