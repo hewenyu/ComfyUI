@@ -13,6 +13,10 @@ import torch
 
 import comfy.model_management
 import nodes
+from comfy.grpc_manager import grpc_manager
+from comfy.generated import status_notifier_pb2
+from comfy.instance_manager import get_comfyui_id
+
 from comfy_execution.caching import (
     CacheKeySetID,
     CacheKeySetInputSignature,
@@ -322,6 +326,17 @@ def execute(server, dynprompt, caches, current_item, extra_data, executed, promp
                 server.last_node_id = display_node_id
                 server.send_sync("executing", { "node": unique_id, "display_node": display_node_id, "prompt_id": prompt_id }, server.client_id)
 
+            try:
+                status_update = status_notifier_pb2.StatusUpdate(
+                    event=status_notifier_pb2.EventType.NODE_EXECUTING,
+                    comfyui_id=get_comfyui_id(),
+                    prompt_id=prompt_id,
+                    timestamp=status_notifier_pb2.Timestamp(seconds=int(time.time()))
+                )
+                grpc_manager.publish(status_update)
+            except Exception as e:
+                logging.error(f"Error publishing node executing status: {e}")
+
             obj = caches.objects.get(unique_id)
             if obj is None:
                 obj = class_def()
@@ -371,6 +386,22 @@ def execute(server, dynprompt, caches, current_item, extra_data, executed, promp
             })
             if server.client_id is not None:
                 server.send_sync("executed", { "node": unique_id, "display_node": display_node_id, "output": output_ui, "prompt_id": prompt_id }, server.client_id)
+            try:
+                status_update = status_notifier_pb2.StatusUpdate(
+                    event=status_notifier_pb2.EventType.NODE_EXECUTED,
+                    comfyui_id=get_comfyui_id(),
+                    prompt_id=prompt_id,
+                    timestamp=status_notifier_pb2.Timestamp(seconds=int(time.time())),
+                    node_execution_info=status_notifier_pb2.NodeExecutionInfo(
+                        node_id=unique_id,
+                        node_type=class_type,
+                        output_ui=output_ui
+                    )
+                )
+                grpc_manager.publish(status_update)
+            except Exception as e:
+                logging.error(f"Error publishing node executed status: {e}")
+
         if has_subgraph:
             cached_outputs = []
             new_node_ids = []
@@ -444,6 +475,24 @@ def execute(server, dynprompt, caches, current_item, extra_data, executed, promp
             "current_inputs": input_data_formatted
         }
 
+        try:
+            status_update = status_notifier_pb2.StatusUpdate(
+                event=status_notifier_pb2.EventType.NODE_ERROR,
+                comfyui_id=get_comfyui_id(),
+                prompt_id=prompt_id,
+                timestamp=status_notifier_pb2.Timestamp(seconds=int(time.time())),
+                error_info=status_notifier_pb2.ErrorInfo(
+                    node_id=real_node_id,
+                    node_type=class_type,
+                    exception_message=error_details["exception_message"],
+                    exception_type=error_details["exception_type"],
+                    traceback=error_details["traceback"],
+                )
+            )
+            grpc_manager.publish(status_update)
+        except Exception as e:
+            logging.error(f"Error publishing node error status: {e}")
+
         return (ExecutionResult.FAILURE, error_details, ex)
 
     executed.add(unique_id)
@@ -474,6 +523,17 @@ class PromptExecutor:
     def handle_execution_error(self, prompt_id, prompt, current_outputs, executed, error, ex):
         node_id = error["node_id"]
         class_type = prompt[node_id]["class_type"]
+
+        try:
+            status_update = status_notifier_pb2.StatusUpdate(
+                event=status_notifier_pb2.EventType.NODE_ERROR,
+                comfyui_id=get_comfyui_id(),
+                prompt_id=prompt_id,
+                timestamp=status_notifier_pb2.Timestamp(seconds=int(time.time()))
+            )
+            grpc_manager.publish(status_update)
+        except Exception as e:
+            logging.error(f"Error publishing node error status: {e}")
 
         # First, send back the status to the frontend depending
         # on the exception type
@@ -506,6 +566,17 @@ class PromptExecutor:
             self.server.client_id = extra_data["client_id"]
         else:
             self.server.client_id = None
+
+        try:
+            status_update = status_notifier_pb2.StatusUpdate(
+                event=status_notifier_pb2.EventType.EXECUTION_START,
+                comfyui_id=get_comfyui_id(),
+                prompt_id=prompt_id,
+                timestamp=status_notifier_pb2.Timestamp(seconds=int(time.time()))
+            )
+            grpc_manager.publish(status_update)
+        except Exception as e:
+            logging.error(f"Error publishing prompt queued status: {e}")
 
         self.status_messages = []
         self.add_message("execution_start", { "prompt_id": prompt_id}, broadcast=False)
@@ -564,6 +635,30 @@ class PromptExecutor:
                 "outputs": ui_outputs,
                 "meta": meta_outputs,
             }
+
+            if self.success:
+                try:
+                    status_update = status_notifier_pb2.StatusUpdate(
+                        event=status_notifier_pb2.EventType.EXECUTION_SUCCESS,
+                        comfyui_id=get_comfyui_id(),
+                        prompt_id=prompt_id,
+                        timestamp=status_notifier_pb2.Timestamp(seconds=int(time.time()))
+                    )
+                    grpc_manager.publish(status_update)
+                except Exception as e:
+                    logging.error(f"Error publishing execution success status: {e}")
+            else:
+                try:
+                    status_update = status_notifier_pb2.StatusUpdate(
+                        event=status_notifier_pb2.EventType.EXECUTION_ERROR,
+                        comfyui_id=get_comfyui_id(),
+                        prompt_id=prompt_id,
+                        timestamp=status_notifier_pb2.Timestamp(seconds=int(time.time()))
+                    )
+                    grpc_manager.publish(status_update)
+                except Exception as e:
+                    logging.error(f"Error publishing execution error status: {e}")
+            
             self.server.last_node_id = None
             if comfy.model_management.DISABLE_SMART_MEMORY:
                 comfy.model_management.unload_all_models()

@@ -35,6 +35,9 @@ from app.model_manager import ModelFileManager
 from app.custom_node_manager import CustomNodeManager
 from typing import Optional, Union
 from api_server.routes.internal.internal_routes import InternalRoutes
+from comfy.grpc_manager import grpc_manager
+from comfy.generated import status_notifier_pb2
+from comfy.instance_manager import get_comfyui_id
 
 class BinaryEventTypes:
     PREVIEW_IMAGE = 1
@@ -654,6 +657,13 @@ class PromptServer():
                     prompt_id = str(uuid.uuid4())
                     outputs_to_execute = valid[2]
                     self.prompt_queue.put((number, prompt_id, prompt, extra_data, outputs_to_execute))
+                    status_update = status_notifier_pb2.StatusUpdate(
+                        event=status_notifier_pb2.EventType.PROMPT_QUEUED,
+                        comfyui_id=get_comfyui_id(),
+                        prompt_id=prompt_id,
+                        prompt_info=status_notifier_pb2.PromptInfo(number=number)
+                    )
+                    grpc_manager.publish(status_update)
                     response = {"prompt_id": prompt_id, "number": number, "node_errors": valid[3]}
                     return web.json_response(response)
                 else:

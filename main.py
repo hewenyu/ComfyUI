@@ -134,6 +134,7 @@ import comfy.model_management
 import comfyui_version
 import app.logger
 import hook_breaker_ac10a0
+from comfy.grpc_manager import grpc_manager
 
 def cuda_malloc_warning():
     device = comfy.model_management.get_torch_device()
@@ -317,6 +318,7 @@ if __name__ == "__main__":
         x = start_all_func()
         app.logger.print_startup_warnings()
         event_loop.run_until_complete(x)
+        grpc_manager.notify_startup()
     except KeyboardInterrupt:
         logging.info("\nStopped server")
 
